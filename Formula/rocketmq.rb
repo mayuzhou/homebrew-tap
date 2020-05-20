@@ -4,7 +4,7 @@
 class Rocketmq < Formula
   desc "Apache RocketMQ is a distributed messaging and streaming platform with low latency, high performance and reliability, trillion-level capacity and flexible scalability."
   homepage "https://rocketmq.apache.org/"
-  url "http://mirror.bit.edu.cn/apache/rocketmq/4.6.0/rocketmq-all-4.6.0-bin-release.zip"
+  url "https://www.apache.org/dyn/closer.cgi?path=rocketmq/4.7.0/rocketmq-all-4.7.0-bin-release.zip"
   sha256 "584910d50639297808dd0b86fcdfaf431efd9607009a44c6258d9a0e227748fe"
 
   bottle :unneeded
