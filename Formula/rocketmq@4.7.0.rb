@@ -28,8 +28,10 @@ class RocketmqAT470 < Formula
     (etc/"rocketmq").install Dir[libexec/"conf/*"]
     (libexec/"conf").rmtree
     (libexec/"bin/mqlaunch").write launch
+    (libexec/"bin/runbroker.sh").rmtree
+    (libexec/"bin/runbroker.sh").write runbroker
     chmod 0555, (libexec/"bin/mqlaunch")
-
+    chmod 0555, (libexec/"bin/runbroker.sh")
     Dir.foreach(libexec/"bin") do |f|
       next if f == "." || f == ".." || !File.extname(f).empty?
 
@@ -61,60 +63,86 @@ class RocketmqAT470 < Formula
 
   def launch; <<~EOS
     #!/bin/sh
-    if [ -z "$ROCKETMQ_HOME" ] ; then
-      ## resolve links - $0 may be a link to maven's home
-      PRG="$0"
-
-      # need this for relative symlinks
-      while [ -h "$PRG" ] ; do
-        ls=`ls -ld "$PRG"`
-        link=`expr "$ls" : '.*-> \(.*\)$'`
-        if expr "$link" : '/.*' > /dev/null; then
-          PRG="$link"
-        else
-          PRG="`dirname "$PRG"`/$link"
-        fi
-      done
-
-      saveddir=`pwd`
-
-      ROCKETMQ_HOME=`dirname "$PRG"`/..
-
-      # make it fully qualified
-      ROCKETMQ_HOME=`cd "$ROCKETMQ_HOME" && pwd`
-
-      cd "$saveddir"
-    fi
-
-    # macos dmg install format
-    if [ ! -d "${JAVA_HOME}" ]; then 
-      JAVA_HOME=`/usr/libexec/java_home -V`
-    fi
-
-    export ROCKETMQ_HOME
-
-    if [ ! -d "${JAVA_HOME}" ]; then 
-        JAVA_HOME_CANDIDATES=($(ps aux | grep java | grep -v 'grep java' | awk '{print $11}' | sed -n 's/\\/bin\\/java$//p')) 
-        for JAVA_HOME_TEMP in ${JAVA_HOME_CANDIDATES[@]}; do 
-            echo ${JAVA_HOME_TEMP}
-            if [ -f "${JAVA_HOME_TEMP}/lib/tools.jar" ]; then 
-                JAVA_HOME=${JAVA_HOME_TEMP} 
-                break 
-            fi 
-        done 
-    fi 
-
-    export JAVA_HOME=${JAVA_HOME}
-
-    pid=jps | grep NamesrvStartup | awk '{print $1}'
-    if [ ! -e "$pid" ]; then
-        nohup sh ${ROCKETMQ_HOME}/bin/runserver.sh org.apache.rocketmq.namesrv.NamesrvStartup &
-    fi
-
-    sh ${ROCKETMQ_HOME}/bin/runbroker.sh org.apache.rocketmq.broker.BrokerStartup @
+    echo 'launch'
+    #{libexec}/bin/mqnamesrv &
+    #{libexec}/bin/mqbroker -n localhost:9876 -c  #{HOMEBREW_PREFIX}/etc/rocketmq/broker.conf autoCreateTopicEnable=true
   EOS
   end
 
+  def runbroker; <<~EOS
+    #!/bin/sh
+    error_exit ()
+    {
+        echo "ERROR: $1 !!"
+        exit 1
+    }
+    
+    [ ! -e "$JAVA_HOME/bin/java" ] && JAVA_HOME=$JAVA_HOME
+    [ ! -e "$JAVA_HOME/bin/java" ] && error_exit "Please set the JAVA_HOME variable in your environment, We need java(x64)!"
+    
+    export JAVA_HOME
+    export JAVA="$JAVA_HOME/bin/java"
+    export BASE_DIR=$(dirname $0)/..
+    export CLASSPATH=.:${BASE_DIR}/conf:${CLASSPATH}
+    
+    #===========================================================================================
+    # JVM Configuration
+    #===========================================================================================
+    # The RAMDisk initializing size in MB on Darwin OS for gc-log
+    DIR_SIZE_IN_MB=600
+    
+    choose_gc_log_directory()
+    {
+        case "`uname`" in
+            Darwin)
+                if [ ! -d "/Volumes/RAMDisk" ]; then
+                    # create ram disk on Darwin systems as gc-log directory
+                    DEV=`hdiutil attach -nomount ram://$((2 * 1024 * DIR_SIZE_IN_MB))` > /dev/null
+                    diskutil eraseVolume HFS+ RAMDisk ${DEV} > /dev/null
+                    echo "Create RAMDisk /Volumes/RAMDisk for gc logging on Darwin OS."
+                fi
+                GC_LOG_DIR="/Volumes/RAMDisk"
+            ;;
+            *)
+                # check if /dev/shm exists on other systems
+                if [ -d "/dev/shm" ]; then
+                    GC_LOG_DIR="/dev/shm"
+                else
+                    GC_LOG_DIR=${BASE_DIR}
+                fi
+            ;;
+        esac
+    }
+    
+    choose_gc_log_directory
+    
+    JAVA_OPT="${JAVA_OPT} -server -Xmsg -Xmx2g -Xmn1g"
+    JAVA_OPT="${JAVA_OPT} -XX:+UseG1GC -XX:G1HeapRegionSize=16m -XX:G1ReservePercent=25 -XX:InitiatingHeapOccupancyPercent=30 -XX:SoftRefLRUPolicyMSPerMB=0"
+    JAVA_OPT="${JAVA_OPT} -verbose:gc -Xloggc:${GC_LOG_DIR}/rmq_broker_gc_%p_%t.log -XX:+PrintGCDetails -XX:+PrintGCDateStamps -XX:+PrintGCApplicationStoppedTime -XX:+PrintAdaptiveSizePolicy"
+    JAVA_OPT="${JAVA_OPT} -XX:+UseGCLogFileRotation -XX:NumberOfGCLogFiles=5 -XX:GCLogFileSize=30m"
+    JAVA_OPT="${JAVA_OPT} -XX:-OmitStackTraceInFastThrow"
+    JAVA_OPT="${JAVA_OPT} -XX:+AlwaysPreTouch"
+    JAVA_OPT="${JAVA_OPT} -XX:MaxDirectMemorySize=15g"
+    JAVA_OPT="${JAVA_OPT} -XX:-UseLargePages -XX:-UseBiasedLocking"
+    JAVA_OPT="${JAVA_OPT} -Djava.ext.dirs=${JAVA_HOME}/jre/lib/ext:${BASE_DIR}/lib"
+    #JAVA_OPT="${JAVA_OPT} -Xdebug -Xrunjdwp:transport=dt_socket,address=9555,server=y,suspend=n"
+    JAVA_OPT="${JAVA_OPT} ${JAVA_OPT_EXT}"
+    JAVA_OPT="${JAVA_OPT} -cp ${CLASSPATH}"
+    
+    numactl --interleave=all pwd > /dev/null 2>&1
+    if [ $? -eq 0 ]
+    then
+      if [ -z "$RMQ_NUMA_NODE" ] ; then
+        numactl --interleave=all $JAVA ${JAVA_OPT} $@
+      else
+        numactl --cpunodebind=$RMQ_NUMA_NODE --membind=$RMQ_NUMA_NODE $JAVA ${JAVA_OPT} $@
+      fi
+    else
+      $JAVA ${JAVA_OPT} $@
+    fi
+
+  EOS
+  end 
 
   def caveats
     s = <<~EOS
@@ -141,10 +169,6 @@ class RocketmqAT470 < Formula
       <key>ProgramArguments</key>
       <array>
         <string>#{bin}/mqlaunch</string>
-        <string>-n</string>
-        <string>localhost:9876</string>
-        <string>-c</string>
-        <string>#{etc}/rocketmq/broker.conf</string>
       </array>
 
       <key>RunAtLoad</key>
