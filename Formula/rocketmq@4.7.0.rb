@@ -74,7 +74,6 @@ class RocketmqAT470 < Formula
 
   def runbroker; <<~EOS
     #!/bin/sh
-    .${HOME}/.bash_profile
     error_exit ()
     {
         echo "ERROR: $1 !!"
@@ -120,7 +119,7 @@ class RocketmqAT470 < Formula
     
     choose_gc_log_directory
     
-    JAVA_OPT="${JAVA_OPT} -server -Xmsg -Xmx2g -Xmn1g"
+    JAVA_OPT="${JAVA_OPT} -server -Xms1g -Xmx2g -Xmn1g"
     JAVA_OPT="${JAVA_OPT} -XX:+UseG1GC -XX:G1HeapRegionSize=16m -XX:G1ReservePercent=25 -XX:InitiatingHeapOccupancyPercent=30 -XX:SoftRefLRUPolicyMSPerMB=0"
     JAVA_OPT="${JAVA_OPT} -verbose:gc -Xloggc:${GC_LOG_DIR}/rmq_broker_gc_%p_%t.log -XX:+PrintGCDetails -XX:+PrintGCDateStamps -XX:+PrintGCApplicationStoppedTime -XX:+PrintAdaptiveSizePolicy"
     JAVA_OPT="${JAVA_OPT} -XX:+UseGCLogFileRotation -XX:NumberOfGCLogFiles=5 -XX:GCLogFileSize=30m"
@@ -150,7 +149,6 @@ class RocketmqAT470 < Formula
 
   def runserver; <<~EOS
     #!/bin/sh
-    .${HOME}/.bash_profile
     [ ! -e "$JAVA_HOME/bin/java" ] && JAVA_HOME= "/Library/Java/JavaVirtualMachines/jdk1.8.0_241.jdk/Contents/Home/bin/java"
     [ ! -e "$JAVA_HOME/bin/java" ] && error_exit "Please set the JAVA_HOME variable in your environment, We need java(x64)!" 
     
