@@ -1,10 +1,11 @@
 # Documentation: https://docs.brew.sh/Formula-Cookbook
 #                https://rubydoc.brew.sh/Formula
 # PLEASE REMOVE ALL GENERATED COMMENTS BEFORE SUBMITTING YOUR PULL REQUEST!
+require 'socket'
 class RocketmqAT470 < Formula
   desc "Apache RocketMQ is a distributed messaging and streaming platform with low latency, high performance and reliability, trillion-level capacity and flexible scalability."
   homepage "https://rocketmq.apache.org/"
-  url "https://www.apache.org/dyn/closer.cgi?path=rocketmq/4.7.0/rocketmq-all-4.7.0-bin-release.zip"
+  url "https://mirrors.tuna.tsinghua.edu.cn/apache/rocketmq/4.7.0/rocketmq-all-4.7.0-bin-release.zip"
   sha256 "ea196c0498e340f2cc0feeab8a43dacac3545a5d49849998a2a7e5ad6c431e74"
 
   bottle :unneeded
@@ -37,7 +38,9 @@ class RocketmqAT470 < Formula
     end
     bin.env_script_all_files(libexec/"bin", {})
   end
-
+  
+   
+ 
   def post_install
     (var/"rocketmq").mkpath
     (var/"log/rocketmq").mkpath
@@ -45,10 +48,13 @@ class RocketmqAT470 < Formula
     ln_s etc/"rocketmq", libexec/"conf"
   end
 
-  def broker_conf; <<~EOS
+  def broker_conf;
+    ip= `ifconfig | grep 'inet ' | grep -v 127.0.0.1 | cut -d' ' -f 2`.split[0]
+    <<~EOS 
       brokerClusterName = DefaultCluster
       brokerName = broker-a
       brokerId = 0
+      nameservAddr=#{ip}:9876
       deleteWhen = 04
       fileReservedTime = 48
       brokerRole = ASYNC_MASTER
@@ -130,7 +136,9 @@ class RocketmqAT470 < Formula
         1. mqnamesrv 
         2. mqbroker -n localhost:9876 -c  #{HOMEBREW_PREFIX}/etc/rocketmq/broker.conf autoCreateTopicEnable=true"
 
-  def plist; <<~EOS
+  def plist;
+    ip= `ifconfig | grep 'inet ' | grep -v 127.0.0.1 | cut -d' ' -f 2`.split[0]
+    <<~EOS
     <?xml version="1.0" encoding="UTF-8"?>
     <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
     <plist version="1.0">
@@ -139,12 +147,16 @@ class RocketmqAT470 < Formula
       <string>#{plist_name}</string>
       
       <key>ProgramArguments</key>
+     
       <array>
-        <string>#{bin}/mqlaunch</string>
+        <string>mqnamesrv</string>
+        <string>&</string>
+        <string>mqbroker</string>
         <string>-n</string>
-        <string>localhost:9876</string>
+        <string>#{ip}:9876</string>
         <string>-c</string>
-        <string>#{etc}/rocketmq/broker.conf</string>
+        <string>#{HOMEBREW_PREFIX}/etc/rocketmq/broker.conf</string>
+        <string>autoCreateTopicEnable=true</string>
       </array>
 
       <key>RunAtLoad</key>
